@@ -7,7 +7,7 @@ KRX 주가 예측 FastAPI 서버
 
 ※ krx_stock_predictor.py 와 같은 폴더에 위치해야 합니다.
 """
-import math, os, sys
+import math, os, sys, time, hashlib
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import pandas as pd
@@ -31,6 +31,24 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"], allow_methods=["*"], allow_headers=["*"],
 )
+
+# ── 인메모리 캐시 ────────────────────────────────
+# { cache_key: {"result": {...}, "ts": float} }
+_cache: dict = {}
+CACHE_TTL = 3600  # 1시간 (초)
+
+def _cache_key(ticker, market, days, years):
+    raw = f"{ticker}:{market}:{days}:{years}"
+    return hashlib.md5(raw.encode()).hexdigest()
+
+def _get_cache(key):
+    entry = _cache.get(key)
+    if entry and (time.time() - entry["ts"]) < CACHE_TTL:
+        return entry["result"]
+    return None
+
+def _set_cache(key, result):
+    _cache[key] = {"result": result, "ts": time.time()}
 
 # ── index.html 서비스 ────────────────────────────
 @app.get("/")
@@ -237,7 +255,7 @@ async def predict(req: PredictRequest):
         for n, m in pred_model.metrics.items()
     )
 
-    return {
+    response = {
         "ticker":      ticker,
         "stock_name":  stock_name,
         "market":      mkt,
@@ -286,4 +304,9 @@ async def predict(req: PredictRequest):
             "overall": ov, "score": sc,
         },
         "ohlcv": ohlcv,
+        "_cached": False,
     }
+
+    # 캐시 저장
+    _set_cache(ckey, response)
+    return response
