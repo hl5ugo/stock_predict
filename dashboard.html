@@ -1,0 +1,400 @@
+import { useState, useEffect } from "react";
+
+// ── 서버 URL (배포 후 실제 주소로 교체) ─────────────────────
+const DEFAULT_API = "https://YOUR-APP-NAME.onrender.com";
+
+/* ── SVG 캔들스틱 차트 ─────────────────────────────────────── */
+function PriceChart({ data, prediction, band, targetDays }) {
+  const [tip, setTip] = useState(null);
+  const W=900, H=300, pad={t:20,r:90,b:28,l:78};
+  const cw=W-pad.l-pad.r, ch=H-pad.t-pad.b;
+  const ext=Math.ceil(targetDays*0.45), total=data.length+ext;
+  const prices=data.flatMap(d=>[d.high,d.low,d.ma5,d.ma20,d.ma60].filter(Boolean));
+  if(prediction) prices.push(band?.upper||prediction, band?.lower||prediction);
+  if(!prices.length) return null;
+  const yMin=Math.min(...prices)*0.997, yMax=Math.max(...prices)*1.003;
+  const xs=i=>(i/(total-1))*cw;
+  const ys=v=>ch-((v-yMin)/(yMax-yMin))*ch;
+  const bw=Math.max(Math.floor(cw/total*0.62),2);
+  const yTicks=Array.from({length:5},(_,i)=>Math.round(yMin+(yMax-yMin)*i/4));
+  const xInt=Math.max(1,Math.floor(data.length/7));
+  const lastClose=data.at(-1)?.close||0;
+  const predX=xs(data.length-1+ext), lastX=xs(data.length-1);
+  const isUp=prediction>=lastClose, pc=isUp?"#22c55e":"#ef4444";
+  return (
+    <div style={{position:"relative"}}>
+      <svg width="100%" viewBox={`0 0 ${W} ${H}`} onMouseLeave={()=>setTip(null)}>
+        <g transform={`translate(${pad.l},${pad.t})`}>
+          {yTicks.map((v,i)=>(
+            <g key={i}>
+              <line x1={0} y1={ys(v)} x2={cw} y2={ys(v)} stroke="#1f2640" strokeDasharray="3,3"/>
+              <text x={-6} y={ys(v)+4} textAnchor="end" fill="#475569" fontSize={10}>{v.toLocaleString()}</text>
+            </g>
+          ))}
+          {prediction && <rect x={lastX} y={0} width={cw-lastX} height={ch} fill="#ffffff07"/>}
+          {prediction && band && (
+            <polygon points={`${lastX},${ys(lastClose)} ${predX},${ys(band.upper)} ${predX},${ys(band.lower)} ${lastX},${ys(lastClose)}`} fill={isUp?"#22c55e18":"#ef444418"}/>
+          )}
+          {[["ma5","#3b82f6"],["ma20","#f59e0b"],["ma60","#ef4444"]].map(([key,color])=>{
+            let d=""; data.forEach((row,i)=>{if(row[key]) d+=(d?`L${xs(i)},${ys(row[key])}`:`M${xs(i)},${ys(row[key])}`);});
+            return d?<path key={key} d={d} stroke={color} strokeWidth={1.5} fill="none" opacity={0.85}/>:null;
+          })}
+          {data.map((d,i)=>{
+            if(!d.open||!d.close||!d.high||!d.low) return null;
+            const up=d.close>=d.open, col=up?"#22c55e":"#ef4444", cx=xs(i);
+            const bTop=ys(Math.max(d.open,d.close)), bBot=ys(Math.min(d.open,d.close));
+            return (
+              <g key={i} onMouseEnter={()=>setTip({...d,cx,col})} style={{cursor:"crosshair"}}>
+                <line x1={cx} y1={ys(d.high)} x2={cx} y2={bTop} stroke={col} strokeWidth={1}/>
+                <line x1={cx} y1={bBot} x2={cx} y2={ys(d.low)} stroke={col} strokeWidth={1}/>
+                <rect x={cx-bw/2} y={bTop} width={bw} height={Math.max(bBot-bTop,1)} fill={col} opacity={0.9} rx={1}/>
+              </g>
+            );
+          })}
+          {data.map((d,i)=>i%xInt===0&&<text key={i} x={xs(i)} y={ch+16} textAnchor="middle" fill="#475569" fontSize={10}>{d.date}</text>)}
+          {prediction && <>
+            <line x1={lastX} y1={ys(lastClose)} x2={predX} y2={ys(prediction)} stroke={pc} strokeWidth={2} strokeDasharray="7,4"/>
+            <circle cx={predX} cy={ys(prediction)} r={5} fill={pc}/>
+            {band && <>
+              <line x1={predX} y1={ys(band.upper)} x2={predX+6} y2={ys(band.upper)} stroke={pc} strokeWidth={1} strokeDasharray="2,2"/>
+              <line x1={predX} y1={ys(band.lower)} x2={predX+6} y2={ys(band.lower)} stroke={pc} strokeWidth={1} strokeDasharray="2,2"/>
+              <line x1={predX} y1={ys(band.upper)} x2={predX} y2={ys(band.lower)} stroke={pc} strokeWidth={1} opacity={0.4}/>
+            </>}
+            <text x={predX+10} y={ys(prediction)-6} fill={pc} fontSize={11} fontWeight="bold">{prediction?.toLocaleString()}원</text>
+            <text x={predX+10} y={ys(prediction)+8} fill="#64748b" fontSize={10}>{targetDays}일 후 예측</text>
+          </>}
+          {tip&&<line x1={tip.cx} y1={0} x2={tip.cx} y2={ch} stroke="#64748b" strokeDasharray="4,3" strokeWidth={1}/>}
+          {[["MA5","#3b82f6"],["MA20","#f59e0b"],["MA60","#ef4444"],["예측","#64748b"]].map(([lb,cl],i)=>(
+            <g key={lb} transform={`translate(${i*56},-6)`}>
+              <line x1={0} y1={2} x2={14} y2={2} stroke={cl} strokeWidth={lb==="예측"?1.5:2} strokeDasharray={lb==="예측"?"4,2":undefined}/>
+              <text x={18} y={6} fill={cl} fontSize={10}>{lb}</text>
+            </g>
+          ))}
+        </g>
+      </svg>
+      {tip&&(
+        <div style={{position:"absolute",top:20,right:12,background:"#0d0f1a",border:`1px solid ${tip.col}`,borderRadius:8,padding:"10px 14px",fontSize:12,lineHeight:1.9,pointerEvents:"none"}}>
+          <div style={{fontWeight:700,color:tip.col,marginBottom:4}}>{tip.date}</div>
+          <div>시가 <b>{tip.open?.toLocaleString()}</b></div>
+          <div style={{color:"#22c55e"}}>고가 <b>{tip.high?.toLocaleString()}</b></div>
+          <div style={{color:"#ef4444"}}>저가 <b>{tip.low?.toLocaleString()}</b></div>
+          <div>종가 <b>{tip.close?.toLocaleString()}</b></div>
+          {tip.ma5&&<div style={{color:"#3b82f6",fontSize:11}}>MA5 {tip.ma5?.toLocaleString()}</div>}
+          {tip.ma20&&<div style={{color:"#f59e0b",fontSize:11}}>MA20 {tip.ma20?.toLocaleString()}</div>}
+          {tip.ma60&&<div style={{color:"#ef4444",fontSize:11}}>MA60 {tip.ma60?.toLocaleString()}</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── Volume Chart ──────────────────────────────────────────── */
+function VolumeChart({data}){
+  const W=900,H=90,pad={t:6,r:90,b:24,l:78};
+  const cw=W-pad.l-pad.r, ch=H-pad.t-pad.b;
+  const vols=data.map(d=>d.volume||0), vMax=Math.max(...vols)||1;
+  const bw=Math.max(Math.floor(cw/data.length*0.62),2);
+  const xs=i=>(i/(data.length-1))*cw;
+  const xInt=Math.max(1,Math.floor(data.length/7));
+  const fmt=v=>v>=1e6?(v/1e6).toFixed(0)+"M":(v/1e3).toFixed(0)+"K";
+  return(
+    <svg width="100%" viewBox={`0 0 ${W} ${H}`}>
+      <g transform={`translate(${pad.l},${pad.t})`}>
+        {[0,vMax*0.5,vMax].map((v,i)=>(
+          <g key={i}>
+            <line x1={0} y1={ch*(1-v/vMax)} x2={cw} y2={ch*(1-v/vMax)} stroke="#1f2640" strokeDasharray="3,3"/>
+            <text x={-6} y={ch*(1-v/vMax)+4} textAnchor="end" fill="#475569" fontSize={9}>{fmt(v)}</text>
+          </g>
+        ))}
+        {data.map((d,i)=>{const bH=(d.volume/vMax)*ch; return <rect key={i} x={xs(i)-bw/2} y={ch-bH} width={bw} height={bH} fill={d.close>=(d.open||d.close)?"#22c55e":"#ef4444"} opacity={0.65} rx={1}/>;} )}
+        {data.map((d,i)=>i%xInt===0&&<text key={i} x={xs(i)} y={ch+14} textAnchor="middle" fill="#475569" fontSize={9}>{d.date}</text>)}
+      </g>
+    </svg>
+  );
+}
+
+/* ── RSI Gauge ─────────────────────────────────────────────── */
+function RSIGauge({value}){
+  const r=46,cx=64,cy=62,toRad=d=>d*Math.PI/180;
+  const startA=-210,totalA=240,v2a=v=>startA+(v/100)*totalA;
+  const zones=[{s:v2a(0),e:v2a(30),c:"#3b82f6",l:"침체"},{s:v2a(30),e:v2a(70),c:"#22c55e",l:"보통"},{s:v2a(70),e:v2a(100),c:"#ef4444",l:"과열"}];
+  const arc=(s,e)=>{const sa=toRad(s),ea=toRad(e); return `M${cx+r*Math.cos(sa)},${cy+r*Math.sin(sa)} A${r},${r} 0 ${(e-s)>180?1:0},1 ${cx+r*Math.cos(ea)},${cy+r*Math.sin(ea)}`;};
+  const na=toRad(v2a(Math.min(Math.max(value||0,0),100)));
+  const col=value>=70?"#ef4444":value>=30?"#22c55e":"#3b82f6";
+  const lbl=value>=70?"과열":value>=30?"보통":"침체";
+  return(
+    <svg width={128} height={90} viewBox="0 0 128 90">
+      <path d={arc(startA,startA+totalA)} stroke="#1f2640" strokeWidth={10} fill="none"/>
+      {zones.map((z,i)=><path key={i} d={arc(z.s,z.e)} stroke={z.c} strokeWidth={10} fill="none" opacity={0.5}/>)}
+      {[0,30,50,70,100].map(v=>{const a=toRad(v2a(v)); return(
+        <g key={v}>
+          <line x1={cx+(r-2)*Math.cos(a)} y1={cy+(r-2)*Math.sin(a)} x2={cx+(r+4)*Math.cos(a)} y2={cy+(r+4)*Math.sin(a)} stroke="#475569" strokeWidth={1.5}/>
+          <text x={cx+(r+14)*Math.cos(a)} y={cy+(r+14)*Math.sin(a)+3} textAnchor="middle" fill="#475569" fontSize={8}>{v}</text>
+        </g>
+      );})}
+      {zones.map((z,i)=>{const ma=toRad((z.s+z.e)/2); return <text key={i} x={cx+(r-24)*Math.cos(ma)} y={cy+(r-24)*Math.sin(ma)+3} textAnchor="middle" fill={z.c} fontSize={8} opacity={0.8}>{z.l}</text>;})}
+      <line x1={cx} y1={cy} x2={cx+(r-10)*Math.cos(na)} y2={cy+(r-10)*Math.sin(na)} stroke={col} strokeWidth={2.5} strokeLinecap="round"/>
+      <circle cx={cx} cy={cy} r={4} fill={col}/>
+      <text x={cx} y={cy+16} textAnchor="middle" fill={col} fontSize={15} fontWeight="bold">{value?.toFixed(1)}</text>
+      <text x={cx} y={cy+27} textAnchor="middle" fill={col} fontSize={9} opacity={0.85}>{lbl}</text>
+    </svg>
+  );
+}
+
+/* ── Tech Card ─────────────────────────────────────────────── */
+function TCard({title,icon,comment,children,accent="#3b82f6"}){
+  return(
+    <div style={{background:"#1a1d2e",borderRadius:10,padding:"14px 16px",border:`1px solid ${accent}22`}}>
+      <div style={{fontSize:11,color:accent,fontWeight:700,marginBottom:8,letterSpacing:"0.5px"}}>{icon} {title}</div>
+      {children}
+      {comment&&<div style={{fontSize:11,color:"#94a3b8",marginTop:8,lineHeight:1.6}}>{comment}</div>}
+    </div>
+  );
+}
+
+/* ── Main App ──────────────────────────────────────────────── */
+export default function App(){
+  const [apiUrl,   setApiUrl]   = useState(DEFAULT_API);
+  const [editUrl,  setEditUrl]  = useState(false);
+  const [tmpUrl,   setTmpUrl]   = useState(DEFAULT_API);
+  const [ticker,   setTicker]   = useState("005930");
+  const [market,   setMarket]   = useState("KOSPI");
+  const [days,     setDays]     = useState(10);
+  const [loading,  setLoading]  = useState(false);
+  const [result,   setResult]   = useState(null);
+  const [error,    setError]    = useState(null);
+  const [svrOk,    setSvrOk]    = useState(null);
+
+  const checkServer = async (url) => {
+    try {
+      const r = await fetch(`${url}/health`, {mode:"cors"});
+      setSvrOk(r.ok);
+    } catch { setSvrOk(false); }
+  };
+
+  useEffect(()=>{ checkServer(apiUrl); },[apiUrl]);
+
+  const search = async () => {
+    setLoading(true); setError(null);
+    try {
+      const r = await fetch(`${apiUrl}/predict`,{
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({ticker, market, days:+days, years:3}),
+      });
+      if(!r.ok){const e=await r.json(); throw new Error(e.detail||"서버 오류");}
+      setResult(await r.json());
+    } catch(e){ setError(e.message); }
+    setLoading(false);
+  };
+
+  const rs=result, ta=rs?.technical, an=rs?.analysis;
+  const isUp=rs?rs.ensemble_pct>=0:null;
+  const card={background:"#1a1d2e",borderRadius:12,padding:"16px 18px",marginBottom:10};
+
+  return(
+    <div style={{maxWidth:980,margin:"0 auto",padding:"18px 14px",background:"#0f1117",minHeight:"100vh",color:"#e2e8f0",fontFamily:"'Apple SD Gothic Neo','Pretendard','Malgun Gothic',sans-serif",boxSizing:"border-box"}}>
+
+      {/* Header */}
+      <div style={{marginBottom:14,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+        <div>
+          <h1 style={{fontSize:20,fontWeight:800,color:"#fff"}}>📈 KRX 주가 예측 대시보드</h1>
+          <p style={{fontSize:11,color:"#475569",marginTop:3}}>pykrx · RandomForest + GradientBoosting + LinearRegression 앙상블 · FastAPI</p>
+        </div>
+        <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:8}}>
+          {svrOk===true && <span style={{fontSize:11,color:"#22c55e",background:"#052e16",borderRadius:20,padding:"3px 10px"}}>● 서버 연결됨</span>}
+          {svrOk===false && <span style={{fontSize:11,color:"#ef4444",background:"#2d1515",borderRadius:20,padding:"3px 10px"}}>● 서버 오프라인</span>}
+          {svrOk===null && <span style={{fontSize:11,color:"#f59e0b",background:"#1a1200",borderRadius:20,padding:"3px 10px"}}>● 연결 확인 중</span>}
+          <button onClick={()=>{setEditUrl(true);setTmpUrl(apiUrl);}}
+            style={{background:"#1a1d2e",border:"1px solid #2d3452",borderRadius:6,padding:"3px 10px",color:"#94a3b8",fontSize:11,cursor:"pointer"}}>
+            ⚙️ 서버 주소 설정
+          </button>
+        </div>
+      </div>
+
+      {/* 서버 주소 설정 모달 */}
+      {editUrl && (
+        <div style={{background:"#1a1d2e",border:"1px solid #3b82f6",borderRadius:10,padding:"14px 16px",marginBottom:12,fontSize:13}}>
+          <div style={{color:"#3b82f6",fontWeight:700,marginBottom:8}}>⚙️ Render 서버 주소 입력</div>
+          <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+            <input value={tmpUrl} onChange={e=>setTmpUrl(e.target.value)}
+              placeholder="https://your-app-name.onrender.com"
+              style={{background:"#0f1117",border:"1px solid #2d3452",borderRadius:7,padding:"8px 12px",color:"#fff",fontSize:13,width:360,outline:"none"}}/>
+            <button onClick={()=>{setApiUrl(tmpUrl);setEditUrl(false);setSvrOk(null);checkServer(tmpUrl);}}
+              style={{background:"#3b82f6",border:"none",borderRadius:7,padding:"8px 16px",color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer"}}>저장</button>
+            <button onClick={()=>setEditUrl(false)}
+              style={{background:"#374151",border:"none",borderRadius:7,padding:"8px 12px",color:"#94a3b8",fontSize:13,cursor:"pointer"}}>취소</button>
+          </div>
+          <div style={{fontSize:11,color:"#475569",marginTop:8}}>Render 배포 후 발급된 주소를 입력하세요. 예: https://krx-dashboard.onrender.com</div>
+        </div>
+      )}
+
+      {/* 서버 오프라인 안내 */}
+      {svrOk===false && (
+        <div style={{background:"#1a0f00",border:"1px solid #92400e",borderRadius:10,padding:"14px 16px",marginBottom:14,fontSize:12,lineHeight:2.2}}>
+          <b style={{color:"#f59e0b"}}>⚠️ 서버에 연결할 수 없습니다</b><br/>
+          <span style={{color:"#94a3b8"}}>① 서버 주소가 올바른지 확인하세요 (위 ⚙️ 버튼)</span><br/>
+          <span style={{color:"#94a3b8"}}>② Render 무료 플랜은 15분 미사용 시 슬립 → 첫 요청에 <b style={{color:"#fbbf24"}}>50초 내외</b> 대기 필요</span><br/>
+          <span style={{color:"#94a3b8"}}>③ 아직 배포 전이라면 아래 배포 가이드를 따라 주세요</span>
+        </div>
+      )}
+
+      {/* 검색 바 */}
+      <div style={{...card,display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+        <div>
+          <label style={{fontSize:11,color:"#64748b",display:"block",marginBottom:4}}>종목코드</label>
+          <input value={ticker} onChange={e=>setTicker(e.target.value)} onKeyDown={e=>e.key==="Enter"&&search()}
+            placeholder="예: 005930, 0163Y0"
+            style={{background:"#0f1117",border:"1px solid #2d3452",borderRadius:7,padding:"8px 12px",color:"#fff",fontSize:13,width:150,outline:"none"}}/>
+        </div>
+        <div>
+          <label style={{fontSize:11,color:"#64748b",display:"block",marginBottom:4}}>시장</label>
+          <select value={market} onChange={e=>setMarket(e.target.value)}
+            style={{background:"#0f1117",border:"1px solid #2d3452",borderRadius:7,padding:"8px 12px",color:"#fff",fontSize:13,outline:"none",cursor:"pointer"}}>
+            {["KOSPI","KOSDAQ","KONEX"].map(m=><option key={m}>{m}</option>)}
+          </select>
+        </div>
+        <div>
+          <label style={{fontSize:11,color:"#64748b",display:"block",marginBottom:4}}>예측 영업일</label>
+          <input type="number" value={days} min={1} max={60} onChange={e=>setDays(e.target.value)}
+            style={{background:"#0f1117",border:"1px solid #2d3452",borderRadius:7,padding:"8px 12px",color:"#fff",fontSize:13,width:80,outline:"none"}}/>
+        </div>
+        <div style={{marginTop:18}}>
+          <button onClick={search} disabled={loading||svrOk===false}
+            style={{background:loading||svrOk===false?"#374151":"linear-gradient(135deg,#3b82f6,#6366f1)",border:"none",borderRadius:8,padding:"9px 22px",color:"#fff",fontWeight:700,fontSize:14,cursor:loading||svrOk===false?"not-allowed":"pointer"}}>
+            {loading?"⏳ 분석 중…":"🔍 분석 시작"}
+          </button>
+        </div>
+      </div>
+
+      {error&&<div style={{background:"#2d1515",border:"1px solid #7f1d1d",borderRadius:8,padding:"12px 16px",marginBottom:10,color:"#fca5a5",fontSize:13}}>⚠️ {error}</div>}
+
+      {rs&&(
+        <>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
+            <div style={card}>
+              <div style={{fontSize:11,color:"#64748b",marginBottom:6}}>{rs.market} · {rs.ticker} · {rs.last_date}</div>
+              <div style={{fontSize:22,fontWeight:800,color:"#fff"}}>{rs.stock_name}</div>
+              <div style={{fontSize:28,fontWeight:800,marginTop:4}}>{rs.current_price?.toLocaleString()}<span style={{fontSize:13,color:"#94a3b8",marginLeft:4}}>원</span></div>
+            </div>
+            <div style={{...card,background:isUp?"#0a1f12":"#1f0a0a",border:`1px solid ${isUp?"#16a34a":"#dc2626"}44`}}>
+              <div style={{fontSize:11,color:"#64748b",marginBottom:6}}>AI 앙상블 예측 ({rs.target_days} 영업일 후)</div>
+              <div style={{fontSize:26,fontWeight:800,color:isUp?"#22c55e":"#ef4444"}}>{rs.predictions?.Ensemble?.toLocaleString()}<span style={{fontSize:13,marginLeft:4}}>원</span></div>
+              <div style={{fontSize:16,fontWeight:700,color:isUp?"#22c55e":"#ef4444",marginTop:4}}>{isUp?"▲":"▼"} {Math.abs(rs.ensemble_pct).toFixed(2)}%</div>
+              <div style={{fontSize:12,color:"#94a3b8",marginTop:6}}>{an?.prediction}</div>
+            </div>
+          </div>
+
+          <div style={card}>
+            <div style={{fontSize:11,color:"#64748b",fontWeight:700,marginBottom:8,letterSpacing:"0.5px"}}>캔들스틱 · MA5 · MA20 · MA60 · 예측 ({rs.target_days}일)</div>
+            <PriceChart data={rs.ohlcv} prediction={rs.predictions?.Ensemble} band={rs.confidence_band} targetDays={rs.target_days}/>
+          </div>
+          <div style={card}>
+            <div style={{fontSize:11,color:"#64748b",fontWeight:700,marginBottom:6,letterSpacing:"0.5px"}}>VOLUME</div>
+            <VolumeChart data={rs.ohlcv}/>
+          </div>
+
+          <div style={{fontSize:13,color:"#94a3b8",fontWeight:700,marginBottom:8,marginTop:4,letterSpacing:"0.5px"}}>💡 기술적 분석</div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:10}}>
+            <TCard title="RSI (과열·침체)" icon="📊" comment={an?.rsi} accent="#a855f7">
+              <RSIGauge value={ta?.rsi}/><div style={{fontSize:11,color:"#64748b",marginTop:2}}>0~30 침체 / 70~100 과열</div>
+            </TCard>
+            <TCard title="MACD (추세 방향)" icon="📉" comment={an?.macd} accent="#f59e0b">
+              <div style={{display:"flex",gap:12,flexWrap:"wrap",marginTop:4}}>
+                {[["MACD",ta?.macd?.toFixed(1),"#3b82f6"],["Signal",ta?.macd_signal?.toFixed(1),"#f59e0b"],["Hist",ta?.macd_hist?.toFixed(1),(ta?.macd_hist||0)>=0?"#22c55e":"#ef4444"]].map(([lb,v,c])=>(
+                  <div key={lb}><div style={{fontSize:10,color:"#64748b"}}>{lb}</div><div style={{fontSize:15,fontWeight:700,color:c}}>{v}</div></div>
+                ))}
+              </div>
+            </TCard>
+            <TCard title="볼린저 밴드" icon="📏" comment={an?.bb} accent="#06b6d4">
+              <div style={{marginTop:6}}>
+                <div style={{background:"#0f1117",borderRadius:6,height:12,overflow:"hidden",position:"relative"}}>
+                  <div style={{position:"absolute",left:`${(ta?.bb_pos||0.5)*100}%`,transform:"translateX(-50%)",width:10,height:10,background:"#06b6d4",borderRadius:"50%",top:1}}/>
+                  <div style={{height:"100%",background:"linear-gradient(to right,#3b82f640,#06b6d440,#ef444440)"}}/>
+                </div>
+                <div style={{display:"flex",justifyContent:"space-between",fontSize:9,color:"#475569",marginTop:3}}><span>하단</span><span>중간</span><span>상단</span></div>
+                <div style={{fontSize:12,color:"#94a3b8",marginTop:6}}>상단 {ta?.bb_upper?.toLocaleString()} · 하단 {ta?.bb_lower?.toLocaleString()}</div>
+              </div>
+            </TCard>
+            <TCard title="이동평균 (MA)" icon="📈" comment={an?.ma} accent="#22c55e">
+              <div style={{display:"flex",flexDirection:"column",gap:5,marginTop:4}}>
+                {[["MA5",ta?.ma5,"#3b82f6",ta?.ma5_ratio],["MA20",ta?.ma20,"#f59e0b",ta?.ma20_ratio],["MA60",ta?.ma60,"#ef4444",ta?.ma60_ratio]].map(([lb,v,c,r])=>(
+                  <div key={lb} style={{display:"flex",alignItems:"center",gap:8}}>
+                    <span style={{width:32,fontSize:11,color:c,fontWeight:700}}>{lb}</span>
+                    <span style={{fontSize:12,color:"#e2e8f0"}}>{v?.toLocaleString()}</span>
+                    {r&&<span style={{fontSize:10,color:r>=1?"#22c55e":"#ef4444",marginLeft:"auto"}}>{((r-1)*100).toFixed(1)}%</span>}
+                  </div>
+                ))}
+              </div>
+            </TCard>
+            <TCard title="거래량" icon="🔊" comment={an?.volume} accent="#f59e0b">
+              <div style={{marginTop:4}}>
+                <div style={{fontSize:22,fontWeight:800,color:(ta?.vol_ratio||0)>=1?"#22c55e":"#ef4444"}}>{ta?.vol_ratio?.toFixed(2)}<span style={{fontSize:12,marginLeft:2,color:"#94a3b8"}}>배</span></div>
+                <div style={{fontSize:11,color:"#64748b",marginTop:2}}>20일 평균 대비</div>
+                <div style={{background:"#0f1117",borderRadius:4,height:6,marginTop:6,overflow:"hidden"}}>
+                  <div style={{height:"100%",width:`${Math.min((ta?.vol_ratio||0)*50,100)}%`,background:(ta?.vol_ratio||0)>=1?"#22c55e":"#f59e0b",borderRadius:4}}/>
+                </div>
+              </div>
+            </TCard>
+            <TCard title="가치 지표 (PER/PBR)" icon="💰" accent="#a855f7">
+              <div style={{display:"flex",flexDirection:"column",gap:6,marginTop:4,fontSize:13}}>
+                {[["PER",ta?.per,"배"],["PBR",ta?.pbr,"배"],["EPS",ta?.eps,"원"],["DIV",ta?.div,"%"]].map(([lb,v,u])=>(
+                  <div key={lb} style={{display:"flex",justifyContent:"space-between"}}>
+                    <span style={{color:"#64748b"}}>{lb}</span>
+                    <span style={{color:"#e2e8f0",fontWeight:600}}>{v!=null?`${v}${u}`:<span style={{color:"#475569"}}>N/A</span>}</span>
+                  </div>
+                ))}
+              </div>
+              {[ta?.per,ta?.pbr,ta?.eps,ta?.div].every(v=>v==null)&&(
+                <div style={{fontSize:10,color:"#475569",marginTop:8,lineHeight:1.6,borderTop:"1px solid #2d3452",paddingTop:6}}>ℹ️ KRX에서 해당 종목의 펀더멘털 데이터를 제공하지 않습니다. (ETF·리츠·적자기업 등)</div>
+              )}
+            </TCard>
+          </div>
+
+          <div style={{background:"linear-gradient(135deg,#1e1b4b,#1a1d2e)",border:"1px solid #3730a3",borderRadius:12,padding:"18px 20px",marginBottom:10}}>
+            <div style={{fontSize:13,color:"#a5b4fc",fontWeight:700,marginBottom:10}}>⚖️ 종합 의견</div>
+            <div style={{fontSize:16,fontWeight:700,color:"#e2e8f0"}}>{an?.overall}</div>
+            <div style={{marginTop:10,display:"flex",alignItems:"center",gap:8}}>
+              <span style={{fontSize:11,color:"#64748b"}}>종합 점수</span>
+              <div style={{background:"#0f1117",borderRadius:20,height:8,flex:1,overflow:"hidden"}}>
+                <div style={{height:"100%",width:`${Math.min(Math.max((an?.score||0)/12*100+50,0),100)}%`,background:"linear-gradient(to right,#ef4444,#f59e0b,#22c55e)",borderRadius:20,transition:"width .6s"}}/>
+              </div>
+              <span style={{fontSize:12,fontWeight:700,color:"#94a3b8",minWidth:24}}>{an?.score}</span>
+            </div>
+          </div>
+
+          <div style={card}>
+            <div style={{fontSize:11,color:"#64748b",fontWeight:700,marginBottom:10,letterSpacing:"0.5px"}}>🤖 모델별 교차검증 성능</div>
+            <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+              <thead>
+                <tr style={{color:"#64748b",fontSize:11}}>
+                  {["모델","예측가","MAE","RMSE","R²","가중치"].map(h=><th key={h} style={{textAlign:"left",padding:"6px 10px",borderBottom:"1px solid #2d3452"}}>{h}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {["RandomForest","GradientBoosting","LinearRegression","Ensemble"].map(name=>{
+                  const p=rs.predictions?.[name], m=rs.metrics?.[name];
+                  const isStar=name==="Ensemble";
+                  const pct=p&&rs.current_price?((p/rs.current_price-1)*100):0;
+                  return(
+                    <tr key={name} style={{borderBottom:"1px solid #1f2640",background:isStar?"#1d1b4b22":"transparent"}}>
+                      <td style={{padding:"8px 10px",fontWeight:isStar?700:400,color:isStar?"#a5b4fc":"#e2e8f0"}}>{isStar?"★ ":""}{name}</td>
+                      <td style={{padding:"8px 10px",color:pct>=0?"#22c55e":"#ef4444",fontWeight:600}}>{p?.toLocaleString()}원 <span style={{fontSize:10}}>({pct>=0?"+":""}{pct.toFixed(2)}%)</span></td>
+                      <td style={{padding:"8px 10px",color:"#94a3b8"}}>{m?.MAE?.toLocaleString()??"—"}</td>
+                      <td style={{padding:"8px 10px",color:"#94a3b8"}}>{m?.RMSE?.toLocaleString()??"—"}</td>
+                      <td style={{padding:"8px 10px",color:m?.R2==null?"#475569":m.R2>=0.5?"#22c55e":m.R2>=0?"#f59e0b":"#ef4444"}}>{m?.R2?.toFixed(4)??"—"}</td>
+                      <td style={{padding:"8px 10px",color:m?.weight==null?"#475569":"#94a3b8"}}>{m?.weight?(m.weight*100).toFixed(1)+"%":"—"}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          <div style={{fontSize:11,color:"#374151",textAlign:"center",padding:"10px 0"}}>
+            ⚠️ 본 분석은 참고용이며 투자 손실에 대한 책임을 지지 않습니다. 모든 투자 결정은 본인의 판단과 책임 하에 이루어져야 합니다.
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
