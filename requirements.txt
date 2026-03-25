@@ -1,6 +1,6 @@
 fastapi==0.111.0
 uvicorn==0.29.0
 pykrx==1.0.47
-pandas==2.2.2
+pandas==2.2.3
 numpy==1.26.4
-scikit-learn==1.4.2
+scikit-learn==1.5.1
