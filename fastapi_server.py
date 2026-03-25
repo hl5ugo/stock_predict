@@ -16,6 +16,7 @@ from typing import Optional
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from krx_stock_predictor import (
@@ -30,6 +31,15 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"], allow_methods=["*"], allow_headers=["*"],
 )
+
+# ── index.html 서비스 ────────────────────────────
+@app.get("/")
+def root():
+    """브라우저에서 Render 주소로 접속 시 index.html 반환"""
+    html_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "index.html")
+    if os.path.exists(html_path):
+        return FileResponse(html_path, media_type="text/html")
+    return {"message": "KRX 주가 예측 API 서버 정상 작동 중. index.html 파일을 같은 폴더에 넣어주세요."}
 
 class PredictRequest(BaseModel):
     ticker: str
