@@ -307,6 +307,7 @@ async def predict(req: PredictRequest):
         "_cached": False,
     }
 
-    # 캐시 저장
-    _set_cache(ckey, response)
+    # 캐시 저장 후 반환
+    cache_key_val = _cache_key(ticker, req.market or "", days, years)
+    _set_cache(cache_key_val, response)
     return response
