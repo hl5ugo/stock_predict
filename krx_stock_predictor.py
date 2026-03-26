@@ -275,11 +275,11 @@ class StockPredictor:
         # 트리 모델은 스케일링 없이, LinearRegression만 Pipeline으로 감쌈
         self.models: dict = {
             "RandomForest": RandomForestRegressor(
-                n_estimators=300, max_depth=8,
+                n_estimators=100, max_depth=8,
                 min_samples_split=5, random_state=42, n_jobs=-1,
             ),
             "GradientBoosting": GradientBoostingRegressor(
-                n_estimators=200, learning_rate=0.05,
+                n_estimators=100, learning_rate=0.05,
                 max_depth=5, random_state=42,
             ),
             "LinearRegression": Pipeline([
